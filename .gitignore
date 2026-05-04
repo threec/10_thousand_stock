@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+node_modules/
+*.db
+data/cache/
+data/web/portfolio.json
+.claude/
+*.log
+.env
