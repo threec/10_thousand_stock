@@ -438,6 +438,13 @@ function fmtCode(code){
   return'SZ'+n;
 }
 
+function apiCode(code){
+  if(!code)return'';
+  const n=code.toLowerCase().replace(/^(sh|sz)/,'');
+  if(/^(6|68|9)/.test(n)||code.startsWith('sh'))return'sh'+n;
+  return'sz'+n;
+}
+
 function pCls(v){return v>0?'up':v<0?'down':'neutral'}
 function pStr(v){return v==null?'—':(v>0?'+':'')+(typeof v==='number'?v.toFixed(1):v)+'%'}
 
@@ -678,7 +685,7 @@ function lookupCode(codeId,nameId,priceId){
     const nameEl=document.getElementById(nameId);
     _lookupTimer=setTimeout(async()=>{
       try{
-        const r=await fetch('/api/quote/'+encodeURIComponent(code));
+        const r=await fetch('/api/quote/'+encodeURIComponent(apiCode(code)));
         const d=await r.json();
         if(d.error)return;
         if(nameEl&&!nameEl.value)nameEl.value=d.name||'';
@@ -725,7 +732,7 @@ function selectAcItem(code,name,codeId,nameId,priceId){
   if(priceId){
     const pe=document.getElementById(priceId);
     if(pe&&!pe.value){pe.value='';pe.placeholder='⏳ 查询现价...'}
-    fetch('/api/quote/'+encodeURIComponent(code))
+    fetch('/api/quote/'+encodeURIComponent(apiCode(code)))
       .then(r=>r.json())
       .then(d=>{
         if(!d.error&&d.price){
@@ -944,7 +951,7 @@ async function showKlineChart(code,name){
   document.querySelector('.kl-period[data-p="daily"]').classList.add('active');
 
   try{
-    const r=await fetch('/api/kline/'+encodeURIComponent(code)+'?period=daily&count=120');
+    const r=await fetch('/api/kline/'+encodeURIComponent(apiCode(code))+'?period=daily&count=120');
     const data=await r.json();
     if(data.error){document.getElementById('kl-chart').innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:520px;color:var(--text-muted)">'+data.error+'</div>';return}
     renderKlineChart(data);
@@ -959,7 +966,7 @@ async function switchKlPeriod(period){
   document.getElementById('kl-chart').innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:520px;color:var(--text-muted)">加载'+period+'数据...</div>';
   document.getElementById('kl-footer').innerHTML='';
   try{
-    const r=await fetch('/api/kline/'+encodeURIComponent(klCode)+'?period='+period+'&count=120');
+    const r=await fetch('/api/kline/'+encodeURIComponent(apiCode(klCode))+'?period='+period+'&count=120');
     const data=await r.json();
     if(data.error){document.getElementById('kl-chart').innerHTML='<div style="color:var(--text-muted);text-align:center;padding-top:200px">'+data.error+'</div>';return}
     renderKlineChart(data);
@@ -987,6 +994,11 @@ function renderKlineChart(data){
   }
 
   const option={
+    legend:{
+      data:['MA5','MA10','MA20'],top:0,left:'center',
+      textStyle:{fontSize:11,color:'#666'},
+      itemWidth:20,itemHeight:2
+    },
     tooltip:{
       trigger:'axis',axisPointer:{type:'cross'},
       formatter:function(ps){
