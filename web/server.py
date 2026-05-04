@@ -155,6 +155,50 @@ def read_body(handler):
     return json.loads(body)
 
 
+# ---- Local DB helpers (use stock_list + stock_kline_daily) ----
+
+def _get_stock_name(code):
+    """Look up stock name from local stock_list table."""
+    conn = get_db(str(ROOT / "data" / "screener" / "screener.db"))
+    row = conn.execute("SELECT name FROM stock_list WHERE code=?", (code,)).fetchone()
+    conn.close()
+    return row['name'] if row else None
+
+
+def _get_local_kline(code, count=500):
+    """Get daily K-line from local stock_kline_daily table."""
+    conn = get_db(str(ROOT / "data" / "screener" / "screener.db"))
+    rows = conn.execute(
+        "SELECT date, open, high, low, close, volume FROM stock_kline_daily "
+        "WHERE code=? ORDER BY date ASC LIMIT ?",
+        (code, count)
+    ).fetchall()
+    conn.close()
+    if not rows:
+        return None
+    result = {'dates':[], 'opens':[], 'closes':[], 'highs':[], 'lows':[], 'volumes':[]}
+    for r in rows:
+        result['dates'].append(r['date'])
+        result['opens'].append(r['open'])
+        result['closes'].append(r['close'])
+        result['highs'].append(r['high'])
+        result['lows'].append(r['low'])
+        result['volumes'].append(r['volume'])
+    return result
+
+
+def _search_stocks(query, limit=20):
+    """Search stock_list by code or name, return matches."""
+    conn = get_db(str(ROOT / "data" / "screener" / "screener.db"))
+    like = f"%{query}%"
+    rows = conn.execute(
+        "SELECT code, name FROM stock_list WHERE code LIKE ? OR name LIKE ? LIMIT ?",
+        (like, like, limit)
+    ).fetchall()
+    conn.close()
+    return [{'code': r['code'], 'name': r['name']} for r in rows]
+
+
 class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
     def __init__(self, *args, **kwargs):
@@ -195,6 +239,9 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             code = path.replace('/api/kline/', '')
             code = urllib.parse.unquote(code)
             self._handle_get_kline(code)
+            return
+        elif path == '/api/stock/search':
+            self._handle_stock_search()
             return
         elif path.startswith('/api/quote/'):
             code = path.replace('/api/quote/', '')
@@ -373,8 +420,11 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 fetch_count = count * 5  # oversample for aggregation
             fetch_count = min(fetch_count, 1000)
 
-            client = get_client(str(ROOT / "data" / "cache" / "api_cache.db"))
-            daily = client.get_kline(code, count=fetch_count)
+            # Try local DB first, fallback to Sina API
+            daily = _get_local_kline(code, fetch_count)
+            if not daily:
+                client = get_client(str(ROOT / "data" / "cache" / "api_cache.db"))
+                daily = client.get_kline(code, count=fetch_count)
             if not daily:
                 json_response(self, {'error': 'no data for '+code}, 404)
                 return
@@ -461,24 +511,49 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             json_response(self, {'error': str(e)}, 500)
 
+    # ---- Stock search endpoint ----
+
+    def _handle_stock_search(self):
+        """Search stock_list by code or name for autocomplete."""
+        try:
+            parsed = urllib.parse.urlparse(self.path)
+            params = urllib.parse.parse_qs(parsed.query)
+            q = params.get('q', [''])[0].strip()
+            if len(q) < 1:
+                json_response(self, [])
+                return
+            results = _search_stocks(q, limit=15)
+            json_response(self, results)
+        except Exception as e:
+            json_response(self, {'error': str(e)}, 500)
+
     # ---- Quote endpoint ----
 
     def _handle_get_quote(self, code):
-        """Look up stock name/price by code via Sina API."""
+        """Look up stock name/price from local DB first, fallback to Sina API."""
         try:
-            client = get_client(str(ROOT / "data" / "cache" / "api_cache.db"))
-            quote = client.get_quote(code)
-            if not quote:
-                json_response(self, {'error': 'no quote for '+code}, 404)
-                return
+            name = _get_stock_name(code)
+            price = None
+            if name:
+                # Try to get latest close from local kline
+                kline = _get_local_kline(code, 1)
+                if kline and kline['closes']:
+                    price = kline['closes'][-1]
+
+            if not name:
+                # Fallback to Sina API
+                client = get_client(str(ROOT / "data" / "cache" / "api_cache.db"))
+                quote = client.get_quote(code)
+                if not quote:
+                    json_response(self, {'error': 'no quote for '+code}, 404)
+                    return
+                name = quote['name']
+                price = quote['current']
+
             json_response(self, {
                 'code': code,
-                'name': quote['name'],
-                'price': quote['current'],
-                'open': quote['open'],
-                'high': quote['high'],
-                'low': quote['low'],
-                'prev_close': quote['prev_close'],
+                'name': name,
+                'price': price or 0,
             })
         except Exception as e:
             json_response(self, {'error': str(e)}, 500)
