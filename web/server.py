@@ -420,11 +420,9 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 fetch_count = count * 5  # oversample for aggregation
             fetch_count = min(fetch_count, 1000)
 
-            # Try local DB first, fallback to Sina API
-            daily = _get_local_kline(code, fetch_count)
-            if not daily:
-                client = get_client(str(ROOT / "data" / "cache" / "api_cache.db"))
-                daily = client.get_kline(code, count=fetch_count)
+            # Always fetch from Sina API (network) for complete K-line data
+            client = get_client(str(ROOT / "data" / "cache" / "api_cache.db"))
+            daily = client.get_kline(code, count=fetch_count)
             if not daily:
                 json_response(self, {'error': 'no data for '+code}, 404)
                 return
@@ -530,25 +528,20 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
     # ---- Quote endpoint ----
 
     def _handle_get_quote(self, code):
-        """Look up stock name/price from local DB first, fallback to Sina API."""
+        """Name from local stock_list (fast), price from Sina API (live)."""
         try:
             name = _get_stock_name(code)
-            price = None
-            if name:
-                # Try to get latest close from local kline
-                kline = _get_local_kline(code, 1)
-                if kline and kline['closes']:
-                    price = kline['closes'][-1]
 
-            if not name:
-                # Fallback to Sina API
-                client = get_client(str(ROOT / "data" / "cache" / "api_cache.db"))
-                quote = client.get_quote(code)
-                if not quote:
-                    json_response(self, {'error': 'no quote for '+code}, 404)
-                    return
+            # Always get live price from network
+            client = get_client(str(ROOT / "data" / "cache" / "api_cache.db"))
+            quote = client.get_quote(code)
+            price = quote['current'] if quote else 0
+
+            if not name and quote:
                 name = quote['name']
-                price = quote['current']
+            if not name:
+                json_response(self, {'error': 'no quote for '+code}, 404)
+                return
 
             json_response(self, {
                 'code': code,

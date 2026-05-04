@@ -718,9 +718,22 @@ function selectAcItem(code,name,codeId,nameId,priceId){
   const ce=document.getElementById(codeId);
   const ne=document.getElementById(nameId);
   if(ce)ce.value=code;
-  if(ne)ne.value=name||'';
+  if(ne&&name)ne.value=name;
   if(_acBox)_acBox.style.display='none';
-  lookupCode(codeId,nameId,priceId); // trigger price fill
+
+  // Async fetch live price
+  if(priceId){
+    const pe=document.getElementById(priceId);
+    if(pe&&!pe.value){pe.value='';pe.placeholder='⏳ 查询现价...'}
+    fetch('/api/quote/'+encodeURIComponent(code))
+      .then(r=>r.json())
+      .then(d=>{
+        if(!d.error&&d.price){
+          const p=document.getElementById(priceId);
+          if(p){p.value=d.price.toFixed(2);p.placeholder=name?'自动填充':''}
+        }
+      }).catch(()=>{});
+  }
 }
 
 // Hide autocomplete on outside click
