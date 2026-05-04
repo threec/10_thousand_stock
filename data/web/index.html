@@ -546,7 +546,7 @@ function addWLButton(code,name,price){
 
 function stockLink(code,name){
   const safe=name?name.replace(/'/g,"\\'"):'';
-  return'<a class="stock-link" href="#" onclick="showKlineChart(\''+code+'\',\''+safe+'\');return false" title="K线图">'+fmtCode(code)+'</a> <span style="font-size:12px">'+(name||'?')+'</span><a href="'+emUrl(code)+'" target="_blank" title="东方财富" style="font-size:9px;color:var(--text-muted);text-decoration:none;margin-left:3px">🔗</a>';
+  return'<a class="stock-link" href="javascript:void(0)" onclick="showKlineChart(\''+code+'\',\''+safe+'\')" title="K线图">'+fmtCode(code)+'</a> <span style="font-size:12px">'+(name||'?')+'</span><a href="'+emUrl(code)+'" target="_blank" title="东方财富" style="font-size:9px;color:var(--text-muted);text-decoration:none;margin-left:3px">🔗</a>';
 }
 
 // ========== HOME ==========
@@ -908,7 +908,7 @@ function expandSearchResult(id){
 // ========== K-LINE ==========
 function klineBtn(code,name){
   if(!code)return'';
-  return' <a class="stock-ext" href="#" onclick="showKlineChart(\''+code+'\',\''+(name||'').replace(/'/g,"\\'")+'\');return false" title="K线">📈</a>';
+  return' <a class="stock-ext" href="javascript:void(0)" onclick="showKlineChart(\''+code+'\',\''+(name||'').replace(/'/g,"\\'")+'\')" title="K线">📈</a>';
 }
 
 async function showKlineChart(code,name){
