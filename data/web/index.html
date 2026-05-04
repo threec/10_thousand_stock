@@ -489,6 +489,7 @@ async function loadData(){
       fetch('kb_index.json').then(r=>r.ok?r.json():null).catch(()=>null)
     ]);
     pfData=pR;scrLatest=sR;aData=aR;kbIdx=kR;
+    buildStockIndex();
     if(aData){
       document.getElementById('sidebar-update').textContent=aData.meta.generated||'';
       document.getElementById('footer-date').textContent=aData.meta.generated;
@@ -652,6 +653,58 @@ function renderHomeSectorChart(sectors){
   cv.parentElement.style.height='320px';
 }
 
+// ========== CODE LOOKUP ==========
+let _lookupTimer=null;
+let _allStockNames=[]; // built from latest screener data
+
+function buildStockIndex(){
+  const seen=new Set();_allStockNames=[];
+  if(scrLatest&&scrLatest.top_stocks){
+    scrLatest.top_stocks.forEach(s=>{
+      if(seen.has(s.code))return;seen.add(s.code);
+      _allStockNames.push({code:s.code,name:s.name,price:s.price||0,sector:s.sector});
+    });
+  }
+  if(pfData){
+    (pfData.watchlist||[]).forEach(w=>{
+      if(!seen.has(w.code)){seen.add(w.code);_allStockNames.push({code:w.code,name:w.name||'',price:0,sector:''})}
+    });
+    (pfData.portfolio||[]).forEach(h=>{
+      if(!seen.has(h.code)){seen.add(h.code);_allStockNames.push({code:h.code,name:h.name||'',price:h.current_price||0,sector:''})}
+    });
+  }
+}
+
+function lookupCode(codeId,nameId,priceId){
+  clearTimeout(_lookupTimer);
+  const codeEl=document.getElementById(codeId);
+  if(!codeEl)return;
+  const code=codeEl.value.trim();
+  if(!code||code.length<2)return;
+
+  // First check local stock index
+  const match=_allStockNames.find(s=>s.code===code||s.code===code.toLowerCase()||s.code===code.toUpperCase());
+  if(match){
+    const nameEl=document.getElementById(nameId);
+    const priceEl=priceId?document.getElementById(priceId):null;
+    if(nameEl&&!nameEl.value)nameEl.value=match.name;
+    if(priceEl&&!priceEl.value&&match.price)priceEl.value=match.price.toFixed(2);
+    return;
+  }
+
+  _lookupTimer=setTimeout(async()=>{
+    try{
+      const r=await fetch('/api/quote/'+encodeURIComponent(code));
+      const d=await r.json();
+      if(d.error)return;
+      const nameEl=document.getElementById(nameId);
+      const priceEl=priceId?document.getElementById(priceId):null;
+      if(nameEl&&!nameEl.value)nameEl.value=d.name||'';
+      if(priceEl&&!priceEl.value&&d.price)priceEl.value=d.price.toFixed(2);
+    }catch(e){}
+  },400);
+}
+
 // ========== PORTFOLIO ==========
 async function refreshPortfolio(){
   try{const r=await fetch('/api/portfolio');holdings=await r.json();renderPfTable()}catch(e){console.error(e)}
@@ -671,7 +724,7 @@ function renderPfTable(){
 }
 function showPfForm(hr){
   const w=document.getElementById('pf-form-wrap'),isEdit=!!hr;
-  w.innerHTML='<div class="inline-form"><h3 style="margin-bottom:8px;font-size:13px">'+(isEdit?'编辑持仓':'添加持仓')+'</h3><div class="form-row"><div class="form-group"><label>代码 *</label><input id="pf-code" value="'+(hr?hr.code:'')+'"></div><div class="form-group"><label>名称</label><input id="pf-name" value="'+(hr?hr.name||'':'')+'"></div></div><div class="form-row"><div class="form-group"><label>入场价</label><input id="pf-price" type="number" step="0.01" value="'+(hr?hr.entry_price||'':'')+'"></div><div class="form-group"><label>入场日期</label><input id="pf-date" type="date" value="'+(hr?hr.entry_date||'':'')+'"></div></div><div class="form-group"><label>入场理由</label><input id="pf-reason" value="'+(hr?hr.entry_reason||'':'')+'"></div><div class="form-row"><div class="form-group"><label>止损方式</label><select id="pf-stop"><option value="ma10">MA10</option><option value="ma20">MA20</option><option value="fixed">固定价</option></select></div><div class="form-group"><label>备注</label><input id="pf-notes" value="'+(hr?hr.notes||'':'')+'"></div></div><div class="btn-group" style="margin-top:6px"><button class="btn btn-primary" onclick="savePf('+(isEdit?hr.id:'null')+')">'+(isEdit?'更新':'保存')+'</button><button class="btn btn-outline" onclick="document.getElementById(\'pf-form-wrap\').innerHTML=\'\'">取消</button></div></div>';
+  w.innerHTML='<div class="inline-form"><h3 style="margin-bottom:8px;font-size:13px">'+(isEdit?'编辑持仓':'添加持仓')+'</h3><div class="form-row"><div class="form-group"><label>代码 *</label><input id="pf-code" value="'+(hr?hr.code:'')+'" oninput="lookupCode(\'pf-code\',\'pf-name\',\'pf-price\')" autocomplete="off" placeholder="sh688256"></div><div class="form-group"><label>名称</label><input id="pf-name" value="'+(hr?hr.name||'':'')+'" placeholder="自动查询"></div></div><div class="form-row"><div class="form-group"><label>入场价</label><input id="pf-price" type="number" step="0.01" value="'+(hr?hr.entry_price||'':'')+'" placeholder="自动填充"></div><div class="form-group"><label>入场日期</label><input id="pf-date" type="date" value="'+(hr?hr.entry_date||'':'')+'"></div></div><div class="form-group"><label>入场理由</label><input id="pf-reason" value="'+(hr?hr.entry_reason||'':'')+'"></div><div class="form-row"><div class="form-group"><label>止损方式</label><select id="pf-stop"><option value="ma10">MA10</option><option value="ma20">MA20</option><option value="fixed">固定价</option></select></div><div class="form-group"><label>备注</label><input id="pf-notes" value="'+(hr?hr.notes||'':'')+'"></div></div><div class="btn-group" style="margin-top:6px"><button class="btn btn-primary" onclick="savePf('+(isEdit?hr.id:'null')+')">'+(isEdit?'更新':'保存')+'</button><button class="btn btn-outline" onclick="document.getElementById(\'pf-form-wrap\').innerHTML=\'\'">取消</button></div></div>';
   if(hr)document.getElementById('pf-stop').value=hr.stop_loss_method||'ma10';
 }
 async function savePf(id){
@@ -703,7 +756,7 @@ function renderWlTable(){
   tb.innerHTML=h;
 }
 function showWlForm(){
-  document.getElementById('wl-form-wrap').innerHTML='<div class="inline-form"><h3 style="margin-bottom:8px;font-size:13px">添加自选股</h3><div class="form-row"><div class="form-group"><label>代码 *</label><input id="wl-code"></div><div class="form-group"><label>名称</label><input id="wl-name"></div></div><div class="form-row"><div class="form-group"><label>目标买入价</label><input id="wl-target" type="number" step="0.01"></div><div class="form-group"><label>提醒分数</label><input id="wl-alert" type="number" value="70"></div></div><div class="form-group"><label>关注理由</label><input id="wl-reason"></div><div class="btn-group" style="margin-top:6px"><button class="btn btn-primary" onclick="saveWl()">添加</button><button class="btn btn-outline" onclick="document.getElementById(\'wl-form-wrap\').innerHTML=\'\'">取消</button></div></div>';
+  document.getElementById('wl-form-wrap').innerHTML='<div class="inline-form"><h3 style="margin-bottom:8px;font-size:13px">添加自选股</h3><div class="form-row"><div class="form-group"><label>代码 *</label><input id="wl-code" oninput="lookupCode(\'wl-code\',\'wl-name\',\'wl-target\')" autocomplete="off" placeholder="sh688256"></div><div class="form-group"><label>名称</label><input id="wl-name" placeholder="自动查询"></div></div><div class="form-row"><div class="form-group"><label>目标买入价</label><input id="wl-target" type="number" step="0.01" placeholder="自动填充现价"></div><div class="form-group"><label>提醒分数</label><input id="wl-alert" type="number" value="70"></div></div><div class="form-group"><label>关注理由</label><input id="wl-reason"></div><div class="btn-group" style="margin-top:6px"><button class="btn btn-primary" onclick="saveWl()">添加</button><button class="btn btn-outline" onclick="document.getElementById(\'wl-form-wrap\').innerHTML=\'\'">取消</button></div></div>';
 }
 async function saveWl(){
   const d={code:document.getElementById('wl-code').value.trim(),name:document.getElementById('wl-name').value.trim(),target_price:parseFloat(document.getElementById('wl-target').value)||0,alert_score:parseInt(document.getElementById('wl-alert').value)||70,watch_reason:document.getElementById('wl-reason').value.trim(),watched_price:0};

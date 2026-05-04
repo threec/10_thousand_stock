@@ -196,6 +196,11 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             code = urllib.parse.unquote(code)
             self._handle_get_kline(code)
             return
+        elif path.startswith('/api/quote/'):
+            code = path.replace('/api/quote/', '')
+            code = urllib.parse.unquote(code)
+            self._handle_get_quote(code)
+            return
         elif path.startswith('/api/'):
             filename = path.replace('/api/', '')
             filepath = DATA_DIR / filename
@@ -453,6 +458,28 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             acknowledge_signal(conn, sid)
             conn.close()
             json_response(self, {'status': 'ok'})
+        except Exception as e:
+            json_response(self, {'error': str(e)}, 500)
+
+    # ---- Quote endpoint ----
+
+    def _handle_get_quote(self, code):
+        """Look up stock name/price by code via Sina API."""
+        try:
+            client = get_client(str(ROOT / "data" / "cache" / "api_cache.db"))
+            quote = client.get_quote(code)
+            if not quote:
+                json_response(self, {'error': 'no quote for '+code}, 404)
+                return
+            json_response(self, {
+                'code': code,
+                'name': quote['name'],
+                'price': quote['current'],
+                'open': quote['open'],
+                'high': quote['high'],
+                'low': quote['low'],
+                'prev_close': quote['prev_close'],
+            })
         except Exception as e:
             json_response(self, {'error': str(e)}, 500)
 
